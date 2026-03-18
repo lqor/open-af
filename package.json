@@ -1,0 +1,17 @@
+{
+  "name": "open-af",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "lint": "eslint force-app/main/default/lwc",
+    "test:lwc": "lwc-jest",
+    "test:unit": "sf apex run test --test-level RunLocalTests --wait 20"
+  },
+  "devDependencies": {
+    "@salesforce/eslint-config-lwc": "^3.7.2",
+    "@salesforce/sfdx-lwc-jest": "^7.2.1",
+    "eslint": "^8.57.1",
+    "eslint-plugin-lwc": "^2.0.1",
+    "prettier": "^3.3.3"
+  }
+}

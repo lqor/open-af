@@ -1,0 +1,9 @@
+.sfdx
+.sf
+node_modules
+coverage
+package-lock.json
+.env
+.env.local
+.env.*
+!.env.example
