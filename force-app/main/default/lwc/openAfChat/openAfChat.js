@@ -138,6 +138,7 @@ export default class OpenAfChat extends LightningElement {
             const state = await getConversationState({ conversationId: this.currentConversationId });
             this.applyConversationState(state);
             if (state.runStatus === 'Queued' || state.runStatus === 'Running') {
+                // eslint-disable-next-line @lwc/lwc/no-async-operation
                 this.pollHandle = window.setTimeout(() => this.refreshConversation(), POLL_INTERVAL_MS);
             }
         } catch (error) {
