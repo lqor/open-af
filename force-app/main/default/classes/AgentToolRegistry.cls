@@ -13,7 +13,8 @@ public without sharing class AgentToolRegistry {
             new ToolingQueryTool(),
             new ListFlowsTool(),
             new ListApexClassesTool(),
-            new DescribePermissionsTool()
+            new DescribePermissionsTool(),
+            new RunApexTool()
         };
         for (AgentTool tool : registrations) {
             tools.put(tool.getName(), tool);
