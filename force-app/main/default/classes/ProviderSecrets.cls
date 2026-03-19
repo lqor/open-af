@@ -1,8 +1,8 @@
 public class ProviderSecrets {
     public class ConfigurationException extends Exception {}
 
-    public static final String ANTHROPIC_API_KEY = 'REPLACE_ME_ANTHROPIC_KEY';
-    public static final String OPENAI_API_KEY = 'REPLACE_ME_OPENAI_KEY';
+    public static final String ANTHROPIC_API_KEY='REPLACE_ME_ANTHROPIC_API_KEY';
+    public static final String OPENAI_API_KEY='REPLACE_ME_OPENAI_API_KEY';
     @TestVisible private static String anthropicKeyOverride;
     @TestVisible private static String openAiKeyOverride;
 
@@ -22,7 +22,13 @@ public class ProviderSecrets {
     }
 
     private static void validateKey(String value, String label) {
-        if (String.isBlank(value) || value.startsWith('REPLACE_ME')) {
+        String normalized = String.isBlank(value) ? '' : value.trim();
+        if (
+            String.isBlank(normalized) ||
+            normalized == '***' ||
+            normalized.startsWith('REPLACE') ||
+            normalized.contains('...')
+        ) {
             throw new ConfigurationException(label + ' API key is not configured in ProviderSecrets. Keep secrets in a local .env file and inject them into org configuration outside git.');
         }
     }

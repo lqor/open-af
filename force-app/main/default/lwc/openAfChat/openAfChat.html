@@ -1,151 +1,139 @@
 <template>
     <div class="page">
-        <div class="shell">
-            <section class="hero">
-                <div class="hero-copy">
-                    <p class="eyebrow">Open AF</p>
-                    <h1>Chat with your sandbox.</h1>
-                    <p class="hero-text">
-                        One chat, one agent loop, and no extra control panels in the way.
-                    </p>
-                    <div class="hero-actions">
-                        <lightning-button
-                            variant="neutral"
-                            label="Fresh Chat"
-                            onclick={handleNewConversation}
-                        ></lightning-button>
-                        <template if:true={canCancel}>
-                            <lightning-button
-                                variant="destructive-text"
-                                label="Cancel Run"
-                                onclick={handleCancelRun}
-                            ></lightning-button>
-                        </template>
-                        <span class="status-pill">{runStatusLabel}</span>
-                    </div>
+        <div class="layout">
+            <!-- Sidebar for conversation history -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h2>Open AF</h2>
+                    <button class="new-chat-btn" onclick={handleNewConversation}>
+                        <span>+</span> New chat
+                    </button>
                 </div>
-                <div class="mascot" aria-hidden="true">
-                    <div class="mascot-core">
-                        <div class="face">
-                            <span class="eye"></span>
-                            <span class="eye"></span>
-                        </div>
-                        <div class="smile"></div>
-                    </div>
-                    <div class="spark spark-a"></div>
-                    <div class="spark spark-b"></div>
-                </div>
-            </section>
-
-            <template if:true={error}>
-                <div class="error-banner">{error}</div>
-            </template>
-
-            <section class="suggestions">
-                <div class="section-heading">
-                    <div>
-                        <h2>Try one</h2>
-                        <p>Quick prompts for when the page opens and your brain does not.</p>
-                    </div>
-                </div>
-                <div class="suggestion-grid">
-                    <template for:each={promptSuggestions} for:item="suggestion">
+                <div class="conversation-list">
+                    <template for:each={conversations} for:item="conv">
                         <button
-                            key={suggestion}
-                            class="suggestion-chip"
-                            data-prompt={suggestion}
-                            onclick={handleSuggestionClick}
+                            key={conv.id}
+                            class={conv.className}
+                            data-id={conv.id}
+                            onclick={handleConversationSelect}
                         >
-                            {suggestion}
+                            <span class="conv-name">{conv.name}</span>
+                            <span class="conv-status">{conv.status}</span>
                         </button>
                     </template>
+                    <template if:false={hasConversations}>
+                        <div class="empty-conversations">
+                            No conversations yet
+                        </div>
+                    </template>
                 </div>
-            </section>
+            </aside>
 
-            <section class="transcript-panel">
-                <div class="section-heading">
-                    <div>
-                        <h2>Conversation</h2>
-                        <p>{transcriptSubtitle}</p>
-                    </div>
-                </div>
-                <div class="transcript">
+            <!-- Main chat area -->
+            <main class="chat-area">
+                <template if:true={error}>
+                    <div class="error-banner">{error}</div>
+                </template>
+
+                <!-- Chat messages -->
+                <div class="chat-messages" id="chatMessages">
                     <template for:each={displayMessages} for:item="message">
                         <article key={message.id} class={message.className}>
-                            <header>
-                                <span>{message.roleLabel}</span>
-                                <template if:true={message.toolName}>
-                                    <small>{message.toolName}</small>
+                            <div class="message-content">
+                                <template if:true={message.isToolCall}>
+                                    <div class="tool-call-indicator">
+                                        <span class="tool-icon">⚡</span>
+                                        <span class="tool-name">{message.toolName}</span>
+                                    </div>
                                 </template>
-                            </header>
-                            <pre>{message.content}</pre>
+                                <template if:false={message.isToolCall}>
+                                    <pre>{message.content}</pre>
+                                </template>
+                            </div>
                         </article>
                     </template>
                     <template if:false={hasMessages}>
-                        <div class="empty-state">
-                            Ask about records, schema, or org structure. Open AF will answer directly or call tools when it has to.
+                        <div class="welcome-message">
+                            <h1>Open AF Agent</h1>
+                            <p>Ask about records, schema, or org structure. I'll answer directly or call tools when needed.</p>
+                            <div class="suggestions">
+                                <template for:each={promptSuggestions} for:item="suggestion">
+                                    <button
+                                        key={suggestion}
+                                        class="suggestion-chip"
+                                        data-prompt={suggestion}
+                                        onclick={handleSuggestionClick}
+                                    >
+                                        {suggestion}
+                                    </button>
+                                </template>
+                            </div>
                         </div>
                     </template>
                 </div>
-            </section>
 
-            <section class="composer">
-                <lightning-textarea
-                    label="Prompt"
-                    value={prompt}
-                    oninput={handlePromptChange}
-                    onkeydown={handlePromptKeydown}
-                    placeholder="Ask for data, metadata, or a quick explanation of what is in this org."
-                ></lightning-textarea>
-                <div class="composer-actions">
-                    <p class="composer-note">Press Cmd/Ctrl+Enter to send. New chats start empty and the current message appears immediately.</p>
-                    <div class="composer-buttons">
-                        <template if:true={canCancel}>
-                            <lightning-button
-                                variant="neutral"
-                                label="Cancel"
-                                onclick={handleCancelRun}
-                            ></lightning-button>
-                        </template>
-                        <lightning-button
-                            variant="brand"
-                            label="Send"
+                <!-- Chat input -->
+                <div class="chat-input">
+                    <div class="input-container">
+                        <lightning-textarea
+                            class="message-input"
+                            value={prompt}
+                            oninput={handlePromptChange}
+                            onchange={handlePromptChange}
+                            onkeydown={handlePromptKeydown}
+                            placeholder="Message Open AF..."
+                        ></lightning-textarea>
+                        <button
+                            class="send-button"
                             onclick={handleSend}
-                            disabled={isBusy}
-                        ></lightning-button>
+                            disabled={isSendDisabled}
+                        >
+                            <span>↑</span>
+                        </button>
                     </div>
+                    <div class="input-hint">
+                        Press Enter to send, Shift+Enter for new line
+                    </div>
+                    <template if:true={canCancel}>
+                        <button class="cancel-button" onclick={handleCancelRun}>
+                            Cancel
+                        </button>
+                    </template>
                 </div>
-            </section>
 
-            <template if:true={hasToolExecutions}>
-                <section class="tools">
-                    <div class="section-heading">
-                        <div>
-                            <h2>{toolTraceLabel}</h2>
-                            <p>Raw tool input and output for the latest run.</p>
+                <!-- Tool executions (hidden by default) -->
+                <template if:true={showToolTrace}>
+                    <div class="tool-trace">
+                        <div class="tool-trace-header">
+                            <h3>Tool Trace ({toolExecutions.length})</h3>
+                        <button class="collapse-btn" onclick={toggleToolTrace}>
+                            {toolTraceButtonLabel}
+                        </button>
+                        </div>
+                        <div class="tool-trace-content">
+                            <template for:each={toolExecutions} for:item="tool">
+                                <article key={tool.id} class="tool-row">
+                                    <header>
+                                        <span>{tool.toolName}</span>
+                                        <small>{tool.status}</small>
+                                    </header>
+                                    <details>
+                                        <summary>Input</summary>
+                                        <pre>{tool.inputJson}</pre>
+                                    </details>
+                                    <details>
+                                        <summary>Output</summary>
+                                        <pre>{tool.outputJson}</pre>
+                                    </details>
+                                    <template if:true={tool.error}>
+                                        <div class="tool-error">{tool.error}</div>
+                                    </template>
+                                </article>
+                            </template>
                         </div>
                     </div>
-                    <template for:each={toolExecutions} for:item="tool">
-                        <article key={tool.id} class="tool-row">
-                            <header>
-                                <span>{tool.toolName}</span>
-                                <small>{tool.status}</small>
-                            </header>
-                            <details>
-                                <summary>Input</summary>
-                                <pre>{tool.inputJson}</pre>
-                            </details>
-                            <details>
-                                <summary>Output</summary>
-                                <pre>{tool.outputJson}</pre>
-                            </details>
-                            <template if:true={tool.error}>
-                                <div class="tool-error">{tool.error}</div>
-                            </template>
-                        </article>
-                    </template>
-                </section>
-            </template>
+                </template>
+            </main>
         </div>
     </div>
 </template>

@@ -3,11 +3,13 @@ import getBootstrap from '@salesforce/apex/OpenAfController.getBootstrap';
 import submitPrompt from '@salesforce/apex/OpenAfController.submitPrompt';
 import getConversationState from '@salesforce/apex/OpenAfController.getConversationState';
 import cancelRun from '@salesforce/apex/OpenAfController.cancelRun';
+import getConversations from '@salesforce/apex/OpenAfController.getConversations';
 
 const POLL_INTERVAL_MS = 2000;
 
 export default class OpenAfChat extends LightningElement {
     bootstrapLoaded = false;
+    conversations = [];
     messages = [];
     toolExecutions = [];
     currentConversationId;
@@ -18,15 +20,27 @@ export default class OpenAfChat extends LightningElement {
     error;
     pollHandle;
     pendingPrompt;
+    showToolTrace = false;
+    resizeHandler;
 
     connectedCallback() {
+        this.resizeHandler = () => this.updateAvailableHeight();
+        window.addEventListener('resize', this.resizeHandler);
         this.loadBootstrap();
+    }
+
+    renderedCallback() {
+        this.updateAvailableHeight();
     }
 
     disconnectedCallback() {
         if (this.pollHandle) {
             window.clearTimeout(this.pollHandle);
             this.pollHandle = null;
+        }
+        if (this.resizeHandler) {
+            window.removeEventListener('resize', this.resizeHandler);
+            this.resizeHandler = null;
         }
     }
 
@@ -38,33 +52,24 @@ export default class OpenAfChat extends LightningElement {
         return Boolean(this.currentRunId) && this.isBusy;
     }
 
-    get runStatusLabel() {
-        return this.runStatus ? `Run: ${this.runStatus}` : 'Run: idle';
+    get isSendDisabled() {
+        return this.isBusy;
+    }
+
+    get toolTraceButtonLabel() {
+        return this.showToolTrace ? 'Hide' : 'Show';
     }
 
     get hasMessages() {
         return this.displayMessages.length > 0;
     }
 
+    get hasConversations() {
+        return this.conversations.length > 0;
+    }
+
     get hasToolExecutions() {
         return this.toolExecutions.length > 0;
-    }
-
-    get transcriptSubtitle() {
-        if (this.error) {
-            return 'Something went sideways. Adjust the prompt and try again.';
-        }
-        if (this.isBusy) {
-            return 'Open AF is working through the request. Your message is already queued.';
-        }
-        if (this.hasMessages) {
-            return `${this.displayMessages.length} messages in this chat.`;
-        }
-        return 'Ask about records, schema, or setup details and let the agent do the digging.';
-    }
-
-    get toolTraceLabel() {
-        return `Tool Trace${this.hasToolExecutions ? ` (${this.toolExecutions.length})` : ''}`;
     }
 
     get promptSuggestions() {
@@ -76,22 +81,26 @@ export default class OpenAfChat extends LightningElement {
     }
 
     get displayMessages() {
-        const rendered = this.messages.map((message) => this.decorateMessage(message));
+        // Filter out tool calls by default, only show user and assistant messages
+        const filtered = this.messages.filter(message => 
+            message.role === 'user' || message.role === 'assistant'
+        ).map(message => this.decorateMessage(message));
+
         if (this.pendingPrompt) {
-            rendered.push(this.decorateMessage({
+            filtered.push(this.decorateMessage({
                 id: 'pending-user',
                 role: 'user',
                 content: this.pendingPrompt
             }));
         }
         if (this.isBusy) {
-            rendered.push(this.decorateMessage({
+            filtered.push(this.decorateMessage({
                 id: 'pending-assistant',
                 role: 'assistant',
                 content: 'Working on it...'
             }));
         }
-        return rendered;
+        return filtered;
     }
 
     async loadBootstrap() {
@@ -99,10 +108,26 @@ export default class OpenAfChat extends LightningElement {
             const data = await getBootstrap();
             const configs = data.configs || [];
             this.selectedConfigId = this.selectedConfigId || this.findActiveConfigId(configs);
+            this.conversations = (data.conversations || []).map(conv => ({
+                ...conv,
+                className: conv.id === this.currentConversationId ? 'active' : ''
+            }));
             this.resetConversation();
             this.bootstrapLoaded = true;
         } catch (error) {
             this.error = this.getErrorMessage(error);
+        }
+    }
+
+    async loadConversations() {
+        try {
+            const convs = await getConversations();
+            this.conversations = (convs || []).map(conv => ({
+                ...conv,
+                className: conv.id === this.currentConversationId ? 'active' : ''
+            }));
+        } catch (error) {
+            console.error('Failed to load conversations:', error);
         }
     }
 
@@ -124,6 +149,12 @@ export default class OpenAfChat extends LightningElement {
         if (!this.isBusy) {
             this.pendingPrompt = null;
         }
+        
+        // Update active conversation in sidebar
+        this.conversations = this.conversations.map(conv => ({
+            ...conv,
+            className: conv.id === this.currentConversationId ? 'active' : ''
+        }));
     }
 
     async refreshConversation() {
@@ -147,11 +178,11 @@ export default class OpenAfChat extends LightningElement {
     }
 
     handlePromptChange(event) {
-        this.prompt = event.target.value;
+        this.prompt = event?.detail?.value ?? event?.target?.value ?? '';
     }
 
     handlePromptKeydown(event) {
-        if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !this.isBusy) {
+        if (event.key === 'Enter' && !event.shiftKey && !this.isBusy) {
             event.preventDefault();
             this.handleSend();
         }
@@ -161,10 +192,18 @@ export default class OpenAfChat extends LightningElement {
         this.resetConversation();
     }
 
+    handleConversationSelect(event) {
+        const conversationId = event.currentTarget.dataset.id;
+        if (conversationId && conversationId !== this.currentConversationId) {
+            this.currentConversationId = conversationId;
+            this.refreshConversation();
+        }
+    }
+
     handleSuggestionClick(event) {
         const prompt = event.currentTarget.dataset.prompt;
         this.prompt = prompt;
-        const textarea = this.template.querySelector('lightning-textarea');
+        const textarea = this.template.querySelector('.message-input');
         if (textarea) {
             textarea.value = prompt;
             textarea.focus();
@@ -172,7 +211,7 @@ export default class OpenAfChat extends LightningElement {
     }
 
     async handleSend() {
-        const promptInput = this.template.querySelector('lightning-textarea');
+        const promptInput = this.template.querySelector('.message-input');
         const promptValue = (promptInput?.value ?? this.prompt ?? '').trim();
         if (!promptValue) {
             return;
@@ -197,6 +236,7 @@ export default class OpenAfChat extends LightningElement {
             this.currentRunId = result.runId;
             this.runStatus = result.status;
             await this.refreshConversation();
+            await this.loadConversations();
         } catch (error) {
             this.pendingPrompt = null;
             this.error = this.getErrorMessage(error);
@@ -216,6 +256,10 @@ export default class OpenAfChat extends LightningElement {
         }
     }
 
+    toggleToolTrace() {
+        this.showToolTrace = !this.showToolTrace;
+    }
+
     resetConversation() {
         if (this.pollHandle) {
             window.clearTimeout(this.pollHandle);
@@ -229,14 +273,36 @@ export default class OpenAfChat extends LightningElement {
         this.prompt = '';
         this.pendingPrompt = null;
         this.error = null;
+        this.showToolTrace = false;
+        
+        // Update active conversation in sidebar
+        this.conversations = this.conversations.map(conv => ({
+            ...conv,
+            className: ''
+        }));
     }
 
     decorateMessage(message) {
+        const isToolCall = message.role === 'tool' || message.toolName;
         return {
             ...message,
-            roleLabel: (message.role || 'assistant').toUpperCase(),
+            isToolCall,
             className: `message message-${message.role || 'assistant'}`
         };
+    }
+
+    updateAvailableHeight() {
+        const page = this.template.querySelector('.page');
+        if (!page) {
+            return;
+        }
+
+        const top = page.getBoundingClientRect().top;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+        const paddingBottom = 16;
+        const available = Math.max(448, Math.floor(viewportHeight - top - paddingBottom));
+
+        this.template.host.style.setProperty('--openaf-available-height', `${available}px`);
     }
 
     getErrorMessage(error) {

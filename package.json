@@ -4,8 +4,11 @@
   "version": "0.1.0",
   "scripts": {
     "lint": "eslint force-app/main/default/lwc",
-    "test:lwc": "lwc-jest",
-    "test:unit": "sf apex run test --test-level RunLocalTests --wait 20"
+    "test:lwc": "lwc-jest -- force-app/main/default/lwc",
+    "test:unit": "sf apex run test --test-level RunLocalTests --wait 20",
+    "test:visual": "playwright test tests/visual/open-af-visual.spec.js",
+    "test:visual:debug": "playwright test tests/visual/open-af-visual.spec.js --headed",
+    "test:visual:update": "playwright test tests/visual/open-af-visual.spec.js --update-snapshots"
   },
   "devDependencies": {
     "@lwc/eslint-plugin-lwc": "^3.4.0",

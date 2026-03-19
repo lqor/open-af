@@ -4,6 +4,7 @@ public without sharing class OpenAfController {
         OpenAfModels.BootstrapData data = new OpenAfModels.BootstrapData();
         data.currentConversationId = null;
         data.configs = AgentConfigService.getConfigViews();
+        data.conversations = getConversations();
         data.conversationState = null;
         return data;
     }
@@ -154,6 +155,25 @@ public without sharing class OpenAfController {
     @AuraEnabled(cacheable=true)
     public static List<OpenAfModels.ConfigView> getConfigs() {
         return AgentConfigService.getConfigViews();
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static List<OpenAfModels.ConversationSummary> getConversations() {
+        List<OpenAfModels.ConversationSummary> summaries = new List<OpenAfModels.ConversationSummary>();
+        for (Conversation__c conv : [
+            SELECT Id, Name, Status__c, CreatedDate
+            FROM Conversation__c
+            ORDER BY CreatedDate DESC
+            LIMIT 50
+        ]) {
+            OpenAfModels.ConversationSummary summary = new OpenAfModels.ConversationSummary();
+            summary.id = conv.Id;
+            summary.name = conv.Name;
+            summary.status = conv.Status__c;
+            summary.createdDate = conv.CreatedDate;
+            summaries.add(summary);
+        }
+        return summaries;
     }
 
     @AuraEnabled

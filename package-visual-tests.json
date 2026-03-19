@@ -1,0 +1,15 @@
+{
+  "name": "open-af-visual-tests",
+  "version": "1.0.0",
+  "description": "Visual regression tests for Open AF LWC using Playwright",
+  "scripts": {
+    "test:visual": "playwright test tests/visual/open-af-visual.spec.js",
+    "test:visual:debug": "playwright test tests/visual/open-af-visual.spec.js --headed",
+    "test:visual:update": "playwright test tests/visual/open-af-visual.spec.js --update-snapshots",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "playwright": "^1.40.0"
+  }
+}
