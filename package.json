@@ -1,7 +1,8 @@
 {
   "name": "open-af",
+  "version": "1.0.0",
+  "license": "MIT",
   "private": true,
-  "version": "0.1.0",
   "scripts": {
     "lint": "eslint force-app/main/default/lwc",
     "test:lwc": "lwc-jest -- force-app/main/default/lwc",
