@@ -6,7 +6,7 @@ import cancelRun from '@salesforce/apex/OpenAfController.cancelRun';
 import getConversations from '@salesforce/apex/OpenAfController.getConversations';
 import deleteConversation from '@salesforce/apex/OpenAfController.deleteConversation';
 
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 500; // Fast polling — messages arrive after each turn
 
 export default class OpenAfChat extends LightningElement {
     bootstrapLoaded = false;
@@ -45,6 +45,85 @@ export default class OpenAfChat extends LightningElement {
         }
     }
 
+    // ─── Bootstrap ──────────────────────────────────────────────────────────
+
+    async loadBootstrap() {
+        try {
+            const data = await getBootstrap();
+            const configs = data.configs || [];
+            this.selectedConfigId = this.selectedConfigId || this.findActiveConfigId(configs);
+            this.conversations = (data.conversations || []).map(conv => ({
+                ...conv,
+                className: conv.id === this.currentConversationId ? 'active' : '',
+                formattedDate: this.formatDate(conv.lastModifiedDate || conv.createdDate)
+            }));
+            this.resetConversation();
+            this.bootstrapLoaded = true;
+        } catch (error) {
+            this.error = this.getErrorMessage(error);
+        }
+    }
+
+    // ─── Conversation list ─────────────────────────────────────────────────
+
+    async loadConversations() {
+        try {
+            const convs = await getConversations();
+            this.conversations = (convs || []).map(conv => ({
+                ...conv,
+                className: conv.id === this.currentConversationId ? 'active' : '',
+                formattedDate: this.formatDate(conv.lastModifiedDate || conv.createdDate)
+            }));
+        } catch (error) {
+            console.error('Failed to load conversations:', error);
+        }
+    }
+
+    findActiveConfigId(configs) {
+        const active = configs.find((config) => config.active);
+        return active ? active.id : configs[0]?.id;
+    }
+
+    applyConversationState(state) {
+        if (!state) return;
+        this.currentConversationId = state.conversationId;
+        this.currentRunId = state.currentRunId;
+        this.runStatus = state.runStatus;
+        this.error = state.error;
+        this.messages = state.messages || [];
+        this.toolExecutions = state.toolExecutions || [];
+        if (!this.isBusy) {
+            this.pendingPrompt = null;
+        }
+        this.conversations = this.conversations.map(conv => ({
+            ...conv,
+            className: conv.id === this.currentConversationId ? 'active' : '',
+            formattedDate: this.formatDate(conv.lastModifiedDate || conv.createdDate)
+        }));
+    }
+
+    // ─── Polling (fast: 500ms) ─────────────────────────────────────────────
+
+    async refreshConversation() {
+        if (!this.currentConversationId) return;
+        if (this.pollHandle) {
+            window.clearTimeout(this.pollHandle);
+            this.pollHandle = null;
+        }
+        try {
+            const state = await getConversationState({ conversationId: this.currentConversationId });
+            this.applyConversationState(state);
+            if (state.runStatus === 'Queued' || state.runStatus === 'Running') {
+                // eslint-disable-next-line @lwc/lwc/no-async-operation
+                this.pollHandle = window.setTimeout(() => this.refreshConversation(), POLL_INTERVAL_MS);
+            }
+        } catch (error) {
+            this.error = this.getErrorMessage(error);
+        }
+    }
+
+    // ─── Computed getters ─────────────────────────────────────────────────
+
     get isBusy() {
         return this.runStatus === 'Queued' || this.runStatus === 'Running';
     }
@@ -82,8 +161,7 @@ export default class OpenAfChat extends LightningElement {
     }
 
     get displayMessages() {
-        // Filter out tool calls by default, only show user and assistant messages
-        const filtered = this.messages.filter(message => 
+        const filtered = this.messages.filter(message =>
             message.role === 'user' || message.role === 'assistant'
         ).map(message => this.decorateMessage(message));
 
@@ -98,87 +176,13 @@ export default class OpenAfChat extends LightningElement {
             filtered.push(this.decorateMessage({
                 id: 'pending-assistant',
                 role: 'assistant',
-                content: 'Working on it...'
+                content: 'Working...'
             }));
         }
         return filtered;
     }
 
-    async loadBootstrap() {
-        try {
-            const data = await getBootstrap();
-            const configs = data.configs || [];
-            this.selectedConfigId = this.selectedConfigId || this.findActiveConfigId(configs);
-            this.conversations = (data.conversations || []).map(conv => ({
-                ...conv,
-                className: conv.id === this.currentConversationId ? 'active' : ''
-            }));
-            this.resetConversation();
-            this.bootstrapLoaded = true;
-        } catch (error) {
-            this.error = this.getErrorMessage(error);
-        }
-    }
-
-    async loadConversations() {
-        try {
-            const convs = await getConversations();
-            this.conversations = (convs || []).map(conv => ({
-                ...conv,
-                className: conv.id === this.currentConversationId ? 'active' : '',
-                formattedDate: this.formatDate(conv.lastModifiedDate || conv.createdDate)
-            }));
-        } catch (error) {
-            console.error('Failed to load conversations:', error);
-        }
-    }
-
-    findActiveConfigId(configs) {
-        const active = configs.find((config) => config.active);
-        return active ? active.id : configs[0]?.id;
-    }
-
-    applyConversationState(state) {
-        if (!state) {
-            return;
-        }
-        this.currentConversationId = state.conversationId;
-        this.currentRunId = state.currentRunId;
-        this.runStatus = state.runStatus;
-        this.error = state.error;
-        this.messages = state.messages || [];
-        this.toolExecutions = state.toolExecutions || [];
-        if (!this.isBusy) {
-            this.pendingPrompt = null;
-        }
-        
-        // Update active conversation in sidebar
-        this.conversations = this.conversations.map(conv => ({
-            ...conv,
-            className: conv.id === this.currentConversationId ? 'active' : '',
-            formattedDate: this.formatDate(conv.lastModifiedDate || conv.createdDate)
-        }));
-    }
-
-    async refreshConversation() {
-        if (!this.currentConversationId) {
-            return;
-        }
-        if (this.pollHandle) {
-            window.clearTimeout(this.pollHandle);
-            this.pollHandle = null;
-        }
-        try {
-            const state = await getConversationState({ conversationId: this.currentConversationId });
-            this.applyConversationState(state);
-            if (state.runStatus === 'Queued' || state.runStatus === 'Running') {
-                // eslint-disable-next-line @lwc/lwc/no-async-operation
-                this.pollHandle = window.setTimeout(() => this.refreshConversation(), POLL_INTERVAL_MS);
-            }
-        } catch (error) {
-            this.error = this.getErrorMessage(error);
-        }
-    }
+    // ─── Handlers ─────────────────────────────────────────────────────────
 
     handlePromptChange(event) {
         this.prompt = event?.detail?.value ?? event?.target?.value ?? '';
@@ -216,16 +220,13 @@ export default class OpenAfChat extends LightningElement {
     async handleSend() {
         const promptInput = this.template.querySelector('.message-input');
         const promptValue = (promptInput?.value ?? this.prompt ?? '').trim();
-        if (!promptValue) {
-            return;
-        }
+        if (!promptValue) return;
 
         this.error = null;
         this.pendingPrompt = promptValue;
         this.prompt = '';
-        if (promptInput) {
-            promptInput.value = '';
-        }
+        if (promptInput) promptInput.value = '';
+
         try {
             const result = await submitPrompt({
                 request: {
@@ -238,7 +239,8 @@ export default class OpenAfChat extends LightningElement {
             this.currentConversationId = result.conversationId;
             this.currentRunId = result.runId;
             this.runStatus = result.status;
-            await this.refreshConversation();
+            // Start fast polling immediately
+            this.refreshConversation();
             await this.loadConversations();
         } catch (error) {
             this.pendingPrompt = null;
@@ -247,12 +249,14 @@ export default class OpenAfChat extends LightningElement {
     }
 
     async handleCancelRun() {
-        if (!this.currentRunId) {
-            return;
-        }
+        if (!this.currentRunId) return;
         try {
             await cancelRun({ runId: this.currentRunId });
             this.pendingPrompt = null;
+            if (this.pollHandle) {
+                window.clearTimeout(this.pollHandle);
+                this.pollHandle = null;
+            }
             await this.refreshConversation();
         } catch (error) {
             this.error = this.getErrorMessage(error);
@@ -277,8 +281,6 @@ export default class OpenAfChat extends LightningElement {
         this.pendingPrompt = null;
         this.error = null;
         this.showToolTrace = false;
-
-        // Update active conversation in sidebar
         this.conversations = this.conversations.map(conv => ({
             ...conv,
             className: ''
@@ -288,14 +290,10 @@ export default class OpenAfChat extends LightningElement {
     async handleDeleteConversation(event) {
         event.stopPropagation();
         const convId = event.currentTarget.dataset.id;
-        if (!convId) {
-            return;
-        }
+        if (!convId) return;
         try {
             await deleteConversation({ conversationId: convId });
-            // Remove from local list
             this.conversations = this.conversations.filter(c => c.id !== convId);
-            // If we deleted the active conversation, reset
             if (this.currentConversationId === convId) {
                 this.resetConversation();
             }
@@ -332,15 +330,11 @@ export default class OpenAfChat extends LightningElement {
 
     updateAvailableHeight() {
         const page = this.template.querySelector('.page');
-        if (!page) {
-            return;
-        }
-
+        if (!page) return;
         const top = page.getBoundingClientRect().top;
         const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
         const paddingBottom = 16;
         const available = Math.max(448, Math.floor(viewportHeight - top - paddingBottom));
-
         this.template.host.style.setProperty('--openaf-available-height', `${available}px`);
     }
 

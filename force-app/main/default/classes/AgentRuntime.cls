@@ -51,7 +51,7 @@ public without sharing class AgentRuntime {
                 request.providerName = provider.getName();
                 request.model = config.Model__c;
                 request.systemPrompt = config.SystemPrompt__c;
-                request.maxTokens = 1024;
+                request.maxTokens=1024;
                 request.messages.addAll(workingMessages);
                 request.tools.addAll(toolDefinitions);
 
@@ -112,6 +112,7 @@ public without sharing class AgentRuntime {
                         execution.Status__c = 'Failed';
                         execution.Error__c = toolError.getMessage();
                         execution.OutputJson__c = toolOutput;
+                        // Do NOT set runRecord.Status__c = 'Failed' — tool errors are handled gracefully
                     }
 
                     Message__c toolRecord = new Message__c(
@@ -134,13 +135,24 @@ public without sharing class AgentRuntime {
                     workingMessages.add(toolMessage);
                 }
                 runRecord.TurnCount__c = turn;
+
+                // Persist this turn's results BEFORE publishing the event
+                update runRecord;
+                if (!pendingMessages.isEmpty()) {
+                    insert pendingMessages;
+                }
+                if (!pendingToolExecutions.isEmpty()) {
+                    insert pendingToolExecutions;
+                }
+                pendingMessages.clear();
+                pendingToolExecutions.clear();
             }
 
             runRecord.Status__c = 'Completed';
             runRecord.FinalResponse__c = finalAssistantText;
             runRecord.CompletedAt__c = System.now();
             runRecord.Error__c = null;
-            persistRuntimeState(runRecord, pendingMessages, pendingToolExecutions);
+            update runRecord;
 
             if (runRecord.ScheduledTask__c != null) {
                 AgentScheduleService.markTaskRun(runRecord.ScheduledTask__c, 'Completed');
@@ -150,12 +162,12 @@ public without sharing class AgentRuntime {
             runRecord.Error__c = cancelled.getMessage();
             runRecord.CompletedAt__c = System.now();
             runRecord.FinalResponse__c = null;
-            persistRuntimeState(runRecord, pendingMessages, pendingToolExecutions);
+            update runRecord;
         } catch (Exception error) {
             runRecord.Status__c = 'Failed';
             runRecord.Error__c = error.getMessage();
             runRecord.CompletedAt__c = System.now();
-            persistRuntimeState(runRecord, pendingMessages, pendingToolExecutions);
+            update runRecord;
 
             if (runRecord.ScheduledTask__c != null) {
                 AgentScheduleService.markTaskRun(runRecord.ScheduledTask__c, 'Failed');
@@ -188,11 +200,9 @@ public without sharing class AgentRuntime {
             if (row == null || row.Role__c == 'tool') {
                 continue;
             }
-
             if (shouldSkipToolSummaryAssistant(rows, index)) {
                 continue;
             }
-
             messages.add(toProviderMessage(row));
         }
         return messages;
@@ -212,23 +222,8 @@ public without sharing class AgentRuntime {
         if (row.Role__c != 'assistant' || String.isBlank(row.Content__c) || !row.Content__c.startsWith('Using tools:')) {
             return false;
         }
-
         Integer nextIndex = index + 1;
         return nextIndex < rows.size() && rows[nextIndex] != null && rows[nextIndex].Role__c == 'tool';
-    }
-
-    private static void persistRuntimeState(
-        Run__c runRecord,
-        List<Message__c> pendingMessages,
-        List<ToolExecution__c> pendingToolExecutions
-    ) {
-        update runRecord;
-        if (!pendingMessages.isEmpty()) {
-            insert pendingMessages;
-        }
-        if (!pendingToolExecutions.isEmpty()) {
-            insert pendingToolExecutions;
-        }
     }
 
     private static Integer getNextSequence(Id conversationId) {
@@ -269,7 +264,6 @@ public without sharing class AgentRuntime {
         if (alreadyKnownCancelled) {
             throw new RunCancelledException('Cancelled by user.');
         }
-
         Run__c current = [
             SELECT CancelRequested__c
             FROM Run__c
