@@ -11,15 +11,28 @@
                 </div>
                 <div class="conversation-list">
                     <template for:each={conversations} for:item="conv">
-                        <button
+                        <div
                             key={conv.id}
-                            class={conv.className}
+                            class="conversation-item {conv.className}"
                             data-id={conv.id}
-                            onclick={handleConversationSelect}
                         >
-                            <span class="conv-name">{conv.name}</span>
-                            <span class="conv-status">{conv.status}</span>
-                        </button>
+                            <button
+                                class="conv-main"
+                                data-id={conv.id}
+                                onclick={handleConversationSelect}
+                            >
+                                <span class="conv-name">{conv.name}</span>
+                                <span class="conv-date">{conv.formattedDate}</span>
+                            </button>
+                            <button
+                                class="conv-delete"
+                                title="Delete conversation"
+                                data-id={conv.id}
+                                onclick={handleDeleteConversation}
+                            >
+                                ✕
+                            </button>
+                        </div>
                     </template>
                     <template if:false={hasConversations}>
                         <div class="empty-conversations">

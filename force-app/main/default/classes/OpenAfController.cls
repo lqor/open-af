@@ -161,9 +161,9 @@ public without sharing class OpenAfController {
     public static List<OpenAfModels.ConversationSummary> getConversations() {
         List<OpenAfModels.ConversationSummary> summaries = new List<OpenAfModels.ConversationSummary>();
         for (Conversation__c conv : [
-            SELECT Id, Name, Status__c, CreatedDate
+            SELECT Id, Name, Status__c, CreatedDate, LastModifiedDate
             FROM Conversation__c
-            ORDER BY CreatedDate DESC
+            ORDER BY LastModifiedDate DESC
             LIMIT 50
         ]) {
             OpenAfModels.ConversationSummary summary = new OpenAfModels.ConversationSummary();
@@ -171,9 +171,34 @@ public without sharing class OpenAfController {
             summary.name = conv.Name;
             summary.status = conv.Status__c;
             summary.createdDate = conv.CreatedDate;
+            summary.lastModifiedDate = conv.LastModifiedDate;
             summaries.add(summary);
         }
         return summaries;
+    }
+
+    @AuraEnabled
+    public static void deleteConversation(Id conversationId) {
+        if (conversationId == null) {
+            throw new AuraHandledException('Conversation ID is required.');
+        }
+        // Cascade delete: tool executions → runs → messages → conversation
+        List<Run__c> runs = [SELECT Id FROM Run__c WHERE Conversation__c = :conversationId];
+        Set<Id> runIds = new Set<Id>();
+        for (Run__c r : runs) {
+            runIds.add(r.Id);
+        }
+        List<ToolExecution__c> toolExecs = runIds.isEmpty()
+            ? new List<ToolExecution__c>()
+            : [SELECT Id FROM ToolExecution__c WHERE Run__c IN :runIds];
+        List<Message__c> messages = [SELECT Id FROM Message__c WHERE Conversation__c = :conversationId];
+
+        delete toolExecs;
+        delete runs;
+        delete messages;
+
+        Conversation__c conv = [SELECT Id FROM Conversation__c WHERE Id = :conversationId LIMIT 1];
+        delete conv;
     }
 
     @AuraEnabled

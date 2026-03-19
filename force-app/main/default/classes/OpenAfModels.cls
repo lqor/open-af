@@ -90,6 +90,7 @@ public class OpenAfModels {
         @AuraEnabled public String name { get; set; }
         @AuraEnabled public String status { get; set; }
         @AuraEnabled public Datetime createdDate { get; set; }
+        @AuraEnabled public Datetime lastModifiedDate { get; set; }
     }
 
     public class ConversationState {

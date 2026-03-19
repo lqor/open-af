@@ -4,6 +4,7 @@ import submitPrompt from '@salesforce/apex/OpenAfController.submitPrompt';
 import getConversationState from '@salesforce/apex/OpenAfController.getConversationState';
 import cancelRun from '@salesforce/apex/OpenAfController.cancelRun';
 import getConversations from '@salesforce/apex/OpenAfController.getConversations';
+import deleteConversation from '@salesforce/apex/OpenAfController.deleteConversation';
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -124,7 +125,8 @@ export default class OpenAfChat extends LightningElement {
             const convs = await getConversations();
             this.conversations = (convs || []).map(conv => ({
                 ...conv,
-                className: conv.id === this.currentConversationId ? 'active' : ''
+                className: conv.id === this.currentConversationId ? 'active' : '',
+                formattedDate: this.formatDate(conv.lastModifiedDate || conv.createdDate)
             }));
         } catch (error) {
             console.error('Failed to load conversations:', error);
@@ -153,7 +155,8 @@ export default class OpenAfChat extends LightningElement {
         // Update active conversation in sidebar
         this.conversations = this.conversations.map(conv => ({
             ...conv,
-            className: conv.id === this.currentConversationId ? 'active' : ''
+            className: conv.id === this.currentConversationId ? 'active' : '',
+            formattedDate: this.formatDate(conv.lastModifiedDate || conv.createdDate)
         }));
     }
 
@@ -274,12 +277,48 @@ export default class OpenAfChat extends LightningElement {
         this.pendingPrompt = null;
         this.error = null;
         this.showToolTrace = false;
-        
+
         // Update active conversation in sidebar
         this.conversations = this.conversations.map(conv => ({
             ...conv,
             className: ''
         }));
+    }
+
+    async handleDeleteConversation(event) {
+        event.stopPropagation();
+        const convId = event.currentTarget.dataset.id;
+        if (!convId) {
+            return;
+        }
+        try {
+            await deleteConversation({ conversationId: convId });
+            // Remove from local list
+            this.conversations = this.conversations.filter(c => c.id !== convId);
+            // If we deleted the active conversation, reset
+            if (this.currentConversationId === convId) {
+                this.resetConversation();
+            }
+        } catch (error) {
+            this.error = this.getErrorMessage(error);
+        }
+    }
+
+    formatDate(dateValue) {
+        if (!dateValue) return '';
+        const d = new Date(dateValue);
+        const now = new Date();
+        const diffMs = now - d;
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (diffDays === 0) {
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        } else if (diffDays === 1) {
+            return 'Yesterday';
+        } else if (diffDays < 7) {
+            return d.toLocaleDateString([], { weekday: 'short' });
+        } else {
+            return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        }
     }
 
     decorateMessage(message) {
